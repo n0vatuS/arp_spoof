@@ -1,7 +1,7 @@
-all: send_arp
+all: arp_spoof
 
-send_arp: main.o module.o pcap.o gmemfunc.cpp gmemhook.cpp gmemmgr.cpp
-	clang++ -std=c++14 -Wall -g -o send_arp main.o module.o pcap.o gmemfunc.cpp gmemhook.cpp gmemmgr.cpp -ldl -lpcap
+arp_spoof: main.o module.o pcap.o
+	g++ -std=c++14 -Wall -g -o send_arp main.o module.o pcap.o -lpcap
 
 main.o: main.cpp
 	g++ -Wall -g -c -o main.o main.cpp
@@ -13,4 +13,4 @@ pcap.o: pcap.cpp pcap.h
 	g++ -Wall -g -c -o pcap.o pcap.cpp
 clean: 
 	rm -f *.o
-	rm send_arp
+	rm arp_spoof

@@ -5,7 +5,7 @@
 char * printIPAddress(uint8_t * ip);
 char * printMacAddress(u_char * mac);
 bool cmpMacAddress(u_char * a, u_char * b);
-uint8_t * parseIP(char * ori_ip);
+int parseIP(uint8_t * addr, char * ori_ip);
 u_char * makeArpPacket(u_char * src_mac, u_char * des_mac, uint8_t * src_ip, uint8_t * des_ip, int opcode);
 char * getAttackerIPAddress(char * dev);
 u_char * getAttackerMacAddress(char * dev);
