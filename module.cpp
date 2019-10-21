@@ -18,6 +18,8 @@
 #include "pcap.h"
 
 #define IP_ADDR_LEN 4
+#define Success 1
+#define Fail 0
 
 char * printIPAddress(uint8_t * ip) {
     char * ret = (char *)malloc(sizeof(char));
@@ -37,6 +39,13 @@ char * printMacAddress(u_char * mac) {
     return ret;
 }
 
+bool cmpIPAddress(uint8_t * a, uint8_t * b) {
+    for(int i = 0; i < IP_ADDR_LEN; i++) {
+        if(a[i] != b[i]) return false;
+    }
+    return true;
+}
+
 bool cmpMacAddress(u_char * a, u_char * b) {
     for(int i = 0; i < ETHER_ADDR_LEN; i++) {
         if(a[i] != b[i]) return false;
@@ -44,9 +53,15 @@ bool cmpMacAddress(u_char * a, u_char * b) {
     return true;
 }
 
-int parseIP(uint8_t * addr, const char * ori_ip) { // parsing string(ip)
+int parseIP(uint8_t * addr, char * ori_ip) { // parsing string(ip)
+    char * token = strtok(ori_ip, ".");
 
-    return 1;
+    for(int i = 0; token != NULL; i++) {
+        addr[i] = atoi(token);
+        token = strtok(NULL, ".");
+    }
+
+    return Success;
 }
 
 u_char * makeArpPacket(u_char * src_mac, u_char * des_mac, uint8_t * src_ip, uint8_t * des_ip, int opcode = 1) {
@@ -88,18 +103,51 @@ u_char * makeArpPacket(u_char * src_mac, u_char * des_mac, uint8_t * src_ip, uin
     return packet;
 }
 
-char * getAttackerIPAddress(uint8_t * hw_addr, uint8_t * ip_addr, char * dev) {
+char * getAttackerIPAddress(char * dev) {
+    char * ip = (char *)malloc(sizeof(char));
+    int fd;
     struct ifreq ifr;
-    int s = socket(AF_INET, SOCK_DGRAM, 0);
-    strcpy(ifr.ifr_name, dev);
+    
+    fd = socket(AF_INET, SOCK_DGRAM, 0);
+    ifr.ifr_addr.sa_family = AF_INET;
+    snprintf(ifr.ifr_name, IFNAMSIZ, "%s", dev);
+    ioctl(fd, SIOCGIFADDR, &ifr);
+    ip = inet_ntoa(((struct sockaddr_in *)&ifr.ifr_addr)->sin_addr);
 
-    // GET HARDWARE ADDRESS
-    ioctl(s, SIOCGIFHWADDR, &ifr);
-    memcpy(hw_addr, ifr.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
+    close(fd);
 
-    // GET IP ADDRESS
-    ioctl(s, SIOCGIFADDR, &ifr);
-    memcpy(ip_addr, ifr.ifr_addr.sa_data+2, IP_ADDR_LEN);
+    return ip;
+}
+
+u_char * getAttackerMacAddress(char * dev) {
+    struct ifaddrs *if_addrs = NULL;
+    struct ifaddrs *if_addr = NULL;
+
+    if (0 == getifaddrs(&if_addrs)) {    
+        for (if_addr = if_addrs; if_addr != NULL; if_addr = if_addr->ifa_next) {
+            if(!strcmp(dev, if_addr->ifa_name)) {
+                printf("name : %s\n", if_addr->ifa_name);
+
+                // MAC address
+                if (if_addr->ifa_addr != NULL && if_addr->ifa_addr->sa_family == AF_LINK) {
+                    struct sockaddr_dl* sdl = (struct sockaddr_dl *)if_addr->ifa_addr;
+                    u_char * mac = (u_char *)malloc(sizeof(u_char) * ETHER_ADDR_LEN);
+                    if (ETHER_ADDR_LEN == sdl->sdl_alen) {
+                        memcpy(mac, LLADDR(sdl), sdl->sdl_alen);
+                        printf("mac  : %02x:%02x:%02x:%02x:%02x:%02x\n\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+                        freeifaddrs(if_addrs);
+                        if_addrs = NULL;
+                        return mac;
+                    }
+                }
+            }
+        }
+    } 
+    else {
+        printf("getifaddrs() failed with errno =  %i %s\n", errno, strerror(errno));
+        exit(1);
+    }
+    return NULL;
 }
 
 u_char * getSenderMacAddress(pcap_t* handle, u_char * src_mac, uint8_t * src_ip, uint8_t * des_ip) {
@@ -117,7 +165,10 @@ u_char * getSenderMacAddress(pcap_t* handle, u_char * src_mac, uint8_t * src_ip,
         if (res == -1 || res == -2) break;
 
         struct ether_arp * res_pcap = DataLinkLayer(packet);
-        if(res_pcap && ntohs(res_pcap -> ea_hdr.ar_op) == 2) return res_pcap -> arp_sha;
+        bool check = res_pcap && ntohs(res_pcap -> ea_hdr.ar_op) == 2 
+            && cmpIPAddress(res_pcap -> arp_spa, des_ip) 
+            && cmpIPAddress(res_pcap -> arp_tpa, src_ip);
+        if(check) return res_pcap -> arp_sha;
     }
     return NULL;
 }

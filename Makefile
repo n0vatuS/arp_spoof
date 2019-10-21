@@ -1,7 +1,7 @@
 all: arp_spoof
 
 arp_spoof: main.o module.o pcap.o
-	g++ -std=c++14 -Wall -g -o send_arp main.o module.o pcap.o -lpcap
+	g++ -std=c++14 -Wall -g -o arp_spoof main.o module.o pcap.o -lpcap
 
 main.o: main.cpp
 	g++ -Wall -g -c -o main.o main.cpp
