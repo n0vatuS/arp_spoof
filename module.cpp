@@ -46,6 +46,13 @@ bool cmpMacAddress(uint8_t * a, uint8_t * b) {
     return true;
 }
 
+void changeIP(uint8_t * ip, in_addr_t * s_addr) {
+    ip[0] = ((uint8_t *)s_addr)[2];
+    ip[1] = ((uint8_t *)s_addr)[3];
+    ip[2] = ((uint8_t *)s_addr)[0];
+    ip[3] = ((uint8_t *)s_addr)[1];
+}
+
 int parseIP(uint8_t * ip, char * ip_str) {
     char * token = strtok(ip_str, ".");
 

@@ -25,6 +25,7 @@ void printMacAddress(const char * msg, uint8_t * mac);
 bool cmpIPAddress(uint8_t * a, uint8_t * b);
 bool cmpMacAddress(uint8_t * a, uint8_t * b);
 
+void changeIP(uint8_t * ip, in_addr_t * s_addr);
 int parseIP(uint8_t * ip, char * ip_str);
 
 int getAttackerIPAddress(char * ip_str, char * dev);

