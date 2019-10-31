@@ -19,6 +19,14 @@ struct ip_packet {
     struct ip ip_hdr;
 };
 
+struct session {
+    uint8_t sender_ip[IP_ADDR_LEN];
+    uint8_t target_ip[IP_ADDR_LEN];
+    uint8_t sender_mac[ETHER_ADDR_LEN];
+    uint8_t target_mac[ETHER_ADDR_LEN];
+    bool atk_ok, sdr_ok, trg_ok, active;
+};
+
 void printIPAddress(const char * msg, uint8_t * ip);
 void printMacAddress(const char * msg, uint8_t * mac);
 
